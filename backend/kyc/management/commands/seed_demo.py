@@ -18,7 +18,10 @@ class Command(BaseCommand):
     help = 'Seed demo data for Playto KYC'
 
     def handle(self, *args, **options):
+        
         self.stdout.write('Seeding demo data...')
+
+        KYCSubmission.objects.all().delete()
 
         # Reviewer
         reviewer, _ = User.objects.get_or_create(
