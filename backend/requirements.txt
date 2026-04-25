@@ -3,4 +3,6 @@ djangorestframework>=3.14
 django-cors-headers>=4.3
 Pillow>=10.0
 python-magic>=0.4.27
-psycopg2-binary>=2.9  # for PostgreSQL; remove if using SQLite
+psycopg2-binary>=2.9 
+gunicorn
+python-dotenv
