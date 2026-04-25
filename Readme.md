@@ -6,7 +6,9 @@ A full-stack KYC (Know Your Customer) verification system for Indian creators an
 
 ## Live Demo
 
-> Deploy URL: _fill in after deploying to Railway / Render / Fly.io_
+> Deploy URL:
+Vercel: https://playto-kyc-theta.vercel.app/
+Render: https://playto-kyc-backend.onrender.com
 
 **Test credentials (pre-seeded):**
 
@@ -173,7 +175,7 @@ Creates the following accounts and submissions (skips if already exist):
 | Username | Role | Submission State |
 |----------|------|-----------------|
 | reviewer | reviewer | — |
-| merchant1 | merchant | submitted (SLA at-risk — submitted 30h ago) |
+| merchant1 | merchant | draft |
 | merchant2 | merchant | under_review |
 | merchant3 | merchant | approved |
 

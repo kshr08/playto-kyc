@@ -50,9 +50,9 @@ class Command(BaseCommand):
 
         # Create submissions in different states
         states_to_create = [
-            (merchants[0], KYCState.SUBMITTED),
-            (merchants[1], KYCState.UNDER_REVIEW),
-            (merchants[2], KYCState.APPROVED),
+            (merchants[0], KYCState.DRAFT),          
+            (merchants[1], KYCState.UNDER_REVIEW),    
+            (merchants[2], KYCState.APPROVED),        
         ]
 
         for (user, name, email, phone, biz, biz_type, volume), target_state in states_to_create:

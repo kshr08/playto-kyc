@@ -131,6 +131,8 @@ export default function AuthPage() {
               {[
                 ['Reviewer', 'reviewer', 'reviewer123'],
                 ['Merchant', 'merchant1', 'password123'],
+                ['Merchant', 'merchant2', 'password123'],
+                ['Merchant', 'merchant3', 'password123'],
               ].map(([role, user, pass]) => (
                 <button key={user} onClick={() => setForm(f => ({ ...f, username: user, password: pass }))}
                   className="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-150 text-left"
