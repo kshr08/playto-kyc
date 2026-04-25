@@ -6,3 +6,4 @@ python-magic>=0.4.27
 psycopg2-binary>=2.9 
 gunicorn
 python-dotenv
+dj-database-url
