@@ -74,7 +74,9 @@ REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'kyc.exceptions.custom_exception_handler',
 }
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = [
+    "https://playto-kyc-theta.vercel.app/",
+]
 CORS_ALLOW_HEADERS = [
     'accept',
     'accept-encoding',
