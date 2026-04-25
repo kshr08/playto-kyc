@@ -1,17 +1,28 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../utils/api';
-import { Button, Input, Select, ErrorBox, SuccessBox, Badge, Spinner } from '../components/UI';
+import { Button, ErrorBox, SuccessBox, Badge } from '../components/UI';
 
 const STEPS = ['Personal', 'Business', 'Documents', 'Review'];
 const DOC_TYPES = [
-  { value: 'pan', label: 'PAN Card' },
-  { value: 'aadhaar', label: 'Aadhaar Card' },
-  { value: 'bank_statement', label: 'Bank Statement' },
+  { value: 'pan', label: 'PAN Card', desc: 'Permanent Account Number card' },
+  { value: 'aadhaar', label: 'Aadhaar Card', desc: '12-digit government ID' },
+  { value: 'bank_statement', label: 'Bank Statement', desc: 'Last 3 months statement' },
 ];
 const BUSINESS_TYPES = [
   'sole_proprietorship', 'partnership', 'private_limited',
   'public_limited', 'llp', 'freelancer', 'other'
 ];
+
+function isStepComplete(step, sub) {
+  const docs = sub.documents || [];
+  switch (step) {
+    case 0: return !!(sub.full_name && sub.email && sub.phone);
+    case 1: return !!(sub.business_name && sub.business_type && sub.expected_monthly_volume_usd);
+    case 2: return docs.length > 0;
+    case 3: return true;
+    default: return false;
+  }
+}
 
 export default function KYCForm({ submission: initialSub, onSaved }) {
   const [sub, setSub] = useState(initialSub);
@@ -21,7 +32,16 @@ export default function KYCForm({ submission: initialSub, onSaved }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [uploading, setUploading] = useState(null);
+  const [stepErrors, setStepErrors] = useState({});
   const fileRefs = useRef({});
+
+  useEffect(() => {
+    setSub(initialSub);
+    setStep(0);
+    setError('');
+    setSuccess('');
+    setStepErrors({});
+  }, [initialSub.id]);
 
   const isReadonly = !['draft', 'more_info_requested'].includes(sub.state);
   const docs = sub.documents || [];
@@ -42,10 +62,26 @@ export default function KYCForm({ submission: initialSub, onSaved }) {
     await save({ [field]: value });
   };
 
+  const goToStep = (nextStep) => {
+    if (nextStep > step && !isReadonly) {
+      const rules = {
+        0: { fields: ['full_name', 'email', 'phone'], label: 'Please fill in all personal details before continuing.' },
+        1: { fields: ['business_name', 'business_type', 'expected_monthly_volume_usd'], label: 'Please fill in all business details before continuing.' },
+        2: { check: () => docs.length > 0, label: 'Please upload at least one document before continuing.' },
+      };
+      const rule = rules[step];
+      if (rule) {
+        const failed = rule.fields ? rule.fields.some(f => !sub[f]) : !rule.check();
+        if (failed) { setStepErrors(prev => ({ ...prev, [step]: rule.label })); return; }
+      }
+    }
+    setStepErrors(prev => ({ ...prev, [step]: '' }));
+    setStep(nextStep);
+  };
+
   const handleUpload = async (docType, file) => {
     if (!file) return;
-    const allowed = ['application/pdf', 'image/jpeg', 'image/png'];
-    if (!allowed.includes(file.type)) { setError('Only PDF, JPG, PNG allowed.'); return; }
+    if (!['application/pdf', 'image/jpeg', 'image/png'].includes(file.type)) { setError('Only PDF, JPG, PNG allowed.'); return; }
     if (file.size > 5 * 1024 * 1024) { setError('File must be under 5 MB.'); return; }
     setUploading(docType); setError('');
     const fd = new FormData();
@@ -53,20 +89,14 @@ export default function KYCForm({ submission: initialSub, onSaved }) {
     fd.append('file', file);
     try {
       const res = await api.uploadDocument(sub.id, fd);
-      setSub(prev => ({
-        ...prev,
-        documents: [
-          ...(prev.documents || []).filter(d => d.doc_type !== docType),
-          res.data
-        ]
-      }));
-      setSuccess('Document uploaded.');
-      setTimeout(() => setSuccess(''), 2000);
+      setSub(prev => ({ ...prev, documents: [...(prev.documents || []).filter(d => d.doc_type !== docType), res.data] }));
+      setSuccess('Document uploaded successfully.');
+      setTimeout(() => setSuccess(''), 3000);
     } catch (e) { setError(e.message); }
     finally { setUploading(null); }
   };
 
-  const handleDeleteDoc = async (docId, docType) => {
+  const handleDeleteDoc = async (docId) => {
     try {
       await api.deleteDocument(sub.id, docId);
       setSub(prev => ({ ...prev, documents: (prev.documents || []).filter(d => d.id !== docId) }));
@@ -74,36 +104,55 @@ export default function KYCForm({ submission: initialSub, onSaved }) {
   };
 
   const handleSubmit = async () => {
+    const missing = [];
+    if (!sub.full_name) missing.push('Full Name');
+    if (!sub.email) missing.push('Email');
+    if (!sub.phone) missing.push('Phone');
+    if (!sub.business_name) missing.push('Business Name');
+    if (!sub.business_type) missing.push('Business Type');
+    if (!sub.expected_monthly_volume_usd) missing.push('Monthly Volume');
+    if (docs.length === 0) missing.push('At least one document');
+    if (missing.length > 0) { setError(`Missing: ${missing.join(', ')}.`); return; }
     setSubmitting(true); setError('');
     try {
       const res = await api.submitKYC(sub.id);
-      setSub(res.data);
-      onSaved?.(res.data);
-      setSuccess("KYC submitted for review! We'll get back to you shortly.");
+      setSub(res.data); onSaved?.(res.data);
+      setSuccess("KYC submitted! We'll review and get back to you shortly.");
     } catch (e) { setError(e.message); }
     finally { setSubmitting(false); }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Step nav */}
-      <div className="flex items-center gap-0">
-        {STEPS.map((s, i) => (
-          <div key={s} className="flex items-center flex-1 last:flex-none">
-            <button
-              onClick={() => setStep(i)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition
-                ${step === i ? 'text-orange-600 bg-orange-50' : 'text-zinc-400 hover:text-zinc-600'}`}
-            >
-              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
-                ${step === i ? 'bg-orange-500 text-white' : i < step ? 'bg-emerald-500 text-white' : 'bg-zinc-200 text-zinc-500'}`}>
-                {i < step ? '✓' : i + 1}
-              </span>
-              {s}
-            </button>
-            {i < STEPS.length - 1 && <div className="flex-1 h-px bg-zinc-200 mx-1" />}
+    <div className="space-y-8 slide-up">
+      {/* Step header */}
+      <div>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-widest mb-1" style={{ color: '#FF5C00' }}>
+              Step {step + 1} of {STEPS.length}
+            </p>
+            <h2 className="font-display font-bold text-2xl" style={{ color: '#F5F5F0' }}>{STEPS[step]}</h2>
           </div>
-        ))}
+          <Badge state={sub.state} />
+        </div>
+
+        {/* Progress tabs */}
+        <div className="flex gap-2">
+          {STEPS.map((s, i) => {
+            const completed = i < step && isStepComplete(i, sub);
+            const active = i === step;
+            return (
+              <button key={s} onClick={() => goToStep(i)} className="flex-1 text-left" title={s}>
+                <div className="h-0.5 rounded-full mb-2 transition-all duration-300"
+                  style={{ background: active ? '#FF5C00' : completed ? '#FF5C0055' : '#2A2A2A' }} />
+                <span className="text-xs transition-colors duration-150"
+                  style={{ color: active ? '#FF5C00' : completed ? '#FF5C0088' : '#444440' }}>
+                  {completed ? '✓ ' : ''}{s}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <ErrorBox message={error} />
@@ -111,71 +160,89 @@ export default function KYCForm({ submission: initialSub, onSaved }) {
 
       {/* Step 0: Personal */}
       {step === 0 && (
-        <div className="space-y-4">
-          <h3 className="text-base font-bold text-zinc-800">Personal Details</h3>
+        <div className="space-y-5 fade-in">
           <FieldInput label="Full Name" defaultValue={sub.full_name} disabled={isReadonly} saving={saving}
             onBlur={(v) => handleField('full_name', v)} placeholder="As on your PAN card" />
-          <FieldInput label="Email" type="email" defaultValue={sub.email} disabled={isReadonly} saving={saving}
+          <FieldInput label="Email Address" type="email" defaultValue={sub.email} disabled={isReadonly} saving={saving}
             onBlur={(v) => handleField('email', v)} placeholder="you@example.com" />
-          <FieldInput label="Phone" defaultValue={sub.phone} disabled={isReadonly} saving={saving}
+          <FieldInput label="Phone Number" defaultValue={sub.phone} disabled={isReadonly} saving={saving}
             onBlur={(v) => handleField('phone', v)} placeholder="+91 98765 43210" />
-          <div className="flex justify-end">
-            <Button onClick={() => setStep(1)}>Next: Business →</Button>
+          {stepErrors[0] && <p className="text-sm" style={{ color: '#FF6666' }}>{stepErrors[0]}</p>}
+          <div className="flex justify-end pt-2">
+            <Button onClick={() => goToStep(1)}>Next: Business →</Button>
           </div>
         </div>
       )}
 
       {/* Step 1: Business */}
       {step === 1 && (
-        <div className="space-y-4">
-          <h3 className="text-base font-bold text-zinc-800">Business Details</h3>
+        <div className="space-y-5 fade-in">
           <FieldInput label="Business Name" defaultValue={sub.business_name} disabled={isReadonly} saving={saving}
             onBlur={(v) => handleField('business_name', v)} placeholder="Your agency or freelance name" />
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-zinc-700">Business Type</label>
-            <select disabled={isReadonly}
-              defaultValue={sub.business_type}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-medium uppercase tracking-widest" style={{ color: '#888880' }}>Business Type</label>
+            <select disabled={isReadonly} value={sub.business_type || ''}
               onChange={(e) => handleField('business_type', e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
-              <option value="">Select type...</option>
-              {BUSINESS_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+              style={{ background: '#111111', border: '1px solid #2A2A2A', color: sub.business_type ? '#F5F5F0' : '#444440' }}
+              className="w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all duration-150">
+              <option value="" style={{ background: '#111' }}>Select business type...</option>
+              {BUSINESS_TYPES.map(t => (
+                <option key={t} value={t} style={{ background: '#111' }}>
+                  {t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                </option>
+              ))}
             </select>
           </div>
           <FieldInput label="Expected Monthly Volume (USD)" type="number" defaultValue={sub.expected_monthly_volume_usd}
             disabled={isReadonly} saving={saving}
             onBlur={(v) => handleField('expected_monthly_volume_usd', v)} placeholder="5000" />
-          <div className="flex justify-between">
-            <Button variant="secondary" onClick={() => setStep(0)}>← Back</Button>
-            <Button onClick={() => setStep(2)}>Next: Documents →</Button>
+          {stepErrors[1] && <p className="text-sm" style={{ color: '#FF6666' }}>{stepErrors[1]}</p>}
+          <div className="flex justify-between pt-2">
+            <Button variant="secondary" onClick={() => goToStep(0)}>← Back</Button>
+            <Button onClick={() => goToStep(2)}>Next: Documents →</Button>
           </div>
         </div>
       )}
 
       {/* Step 2: Documents */}
       {step === 2 && (
-        <div className="space-y-4">
-          <h3 className="text-base font-bold text-zinc-800">Document Upload</h3>
-          <p className="text-sm text-zinc-500">Upload PDF, JPG, or PNG. Max 5 MB each.</p>
-          {DOC_TYPES.map(({ value, label }) => {
+        <div className="space-y-4 fade-in">
+          <p className="text-sm" style={{ color: '#555550' }}>PDF, JPG, or PNG only · Max 5 MB each · At least one required</p>
+          {DOC_TYPES.map(({ value, label, desc }) => {
             const existing = getDoc(value);
             return (
-              <div key={value} className="rounded-xl border border-zinc-200 p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-zinc-700">{label}</span>
+              <div key={value} className="rounded-2xl p-5 transition-all duration-200"
+                style={{ background: existing ? '#001A0D' : '#141414', border: `1px solid ${existing ? '#00C87533' : '#222222'}` }}>
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-medium" style={{ color: '#F5F5F0' }}>{label}</p>
+                    <p className="text-xs mt-0.5" style={{ color: '#444440' }}>{desc}</p>
+                  </div>
                   {existing && (
-                    <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">✓ Uploaded</span>
+                    <span className="text-xs px-2.5 py-1 rounded-full font-medium"
+                      style={{ background: '#00C87522', color: '#00C875', border: '1px solid #00C87533' }}>✓ Uploaded</span>
                   )}
                 </div>
                 {existing ? (
-                  <div className="flex items-center gap-3">
-                    <a href={existing.file_url} target="_blank" rel="noreferrer"
-                      className="text-xs text-orange-600 hover:underline truncate max-w-xs">
-                      {existing.original_filename}
-                    </a>
-                    <span className="text-xs text-zinc-400">({(existing.file_size_bytes / 1024).toFixed(0)} KB)</span>
+                  <div className="flex items-center gap-3 p-3 rounded-xl"
+                    style={{ background: '#0A1A0F', border: '1px solid #00C87522' }}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base"
+                      style={{ background: '#00C87522' }}>
+                      {existing.mime_type === 'application/pdf' ? '📄' : '🖼'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <a href={existing.file_url} target="_blank" rel="noreferrer"
+                        className="text-xs font-medium hover:underline truncate block" style={{ color: '#00C875' }}>
+                        {existing.original_filename}
+                      </a>
+                      <p className="text-xs mt-0.5" style={{ color: '#444440' }}>{(existing.file_size_bytes / 1024).toFixed(0)} KB</p>
+                    </div>
                     {!isReadonly && (
-                      <button onClick={() => handleDeleteDoc(existing.id, value)}
-                        className="text-xs text-red-500 hover:text-red-700 ml-auto">Remove</button>
+                      <button onClick={() => handleDeleteDoc(existing.id)}
+                        className="text-xs px-2.5 py-1 rounded-lg transition-all duration-150"
+                        style={{ color: '#FF6666', background: '#FF444411', border: '1px solid #FF444422' }}>
+                        Remove
+                      </button>
                     )}
                   </div>
                 ) : !isReadonly ? (
@@ -185,75 +252,66 @@ export default function KYCForm({ submission: initialSub, onSaved }) {
                       onChange={(e) => handleUpload(value, e.target.files[0])} />
                     <Button size="sm" variant="secondary" loading={uploading === value}
                       onClick={() => fileRefs.current[value]?.click()}>
-                      Choose file
+                      {uploading === value ? 'Uploading...' : 'Choose file'}
                     </Button>
                   </div>
                 ) : (
-                  <p className="text-xs text-zinc-400 italic">No document uploaded</p>
+                  <p className="text-xs italic" style={{ color: '#444440' }}>No document uploaded</p>
                 )}
               </div>
             );
           })}
-          <div className="flex justify-between">
-            <Button variant="secondary" onClick={() => setStep(1)}>← Back</Button>
-            <Button onClick={() => setStep(3)}>Review →</Button>
+          {stepErrors[2] && <p className="text-sm" style={{ color: '#FF6666' }}>{stepErrors[2]}</p>}
+          <div className="flex justify-between pt-2">
+            <Button variant="secondary" onClick={() => goToStep(1)}>← Back</Button>
+            <Button onClick={() => goToStep(3)}>Review →</Button>
           </div>
         </div>
       )}
 
       {/* Step 3: Review */}
       {step === 3 && (
-        <div className="space-y-5">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-bold text-zinc-800">Review & Submit</h3>
-            <Badge state={sub.state} />
-          </div>
-
+        <div className="space-y-6 fade-in">
           {sub.state === 'more_info_requested' && sub.reviewer_note && (
-            <div className="rounded-xl border border-purple-200 bg-purple-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-purple-500 mb-1">Reviewer Note</p>
-              <p className="text-sm text-purple-800">{sub.reviewer_note}</p>
+            <div className="rounded-2xl p-5" style={{ background: '#120D1A', border: '1px solid #AA88FF33' }}>
+              <p className="text-xs font-medium uppercase tracking-widest mb-2" style={{ color: '#AA88FF' }}>Reviewer Note</p>
+              <p className="text-sm leading-relaxed" style={{ color: '#CCBBFF' }}>{sub.reviewer_note}</p>
             </div>
           )}
-
-          <div className="rounded-xl border border-zinc-200 divide-y divide-zinc-100 text-sm">
+          <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #222222' }}>
             {[
               ['Full Name', sub.full_name],
               ['Email', sub.email],
               ['Phone', sub.phone],
-              ['Business', sub.business_name],
-              ['Business Type', sub.business_type?.replace(/_/g, ' ')],
+              ['Business Name', sub.business_name],
+              ['Business Type', sub.business_type?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())],
               ['Monthly Volume', sub.expected_monthly_volume_usd ? `$${Number(sub.expected_monthly_volume_usd).toLocaleString()}` : null],
-              ['Documents', docs.map(d => d.doc_type.replace(/_/g, ' ')).join(', ') || 'None'],
-            ].map(([k, v]) => (
-              <div key={k} className="flex px-4 py-2.5 gap-4">
-                <span className="w-36 text-zinc-400 shrink-0">{k}</span>
-                <span className="text-zinc-800 font-medium">{v || <span className="text-zinc-300">—</span>}</span>
+              ['Documents', docs.length > 0 ? `${docs.length} file${docs.length > 1 ? 's' : ''} uploaded` : null],
+            ].map(([k, v], idx) => (
+              <div key={k} className="flex items-center px-5 py-3.5"
+                style={{ borderBottom: idx < 6 ? '1px solid #1E1E1E' : 'none', background: idx % 2 === 0 ? '#141414' : '#121212' }}>
+                <span className="w-40 text-xs font-medium uppercase tracking-wide shrink-0" style={{ color: '#444440' }}>{k}</span>
+                <span className="text-sm font-medium" style={{ color: v ? '#F5F5F0' : '#FF4444' }}>{v || '— missing'}</span>
               </div>
             ))}
           </div>
-
           {sub.state === 'approved' && (
-            <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-center">
-              <p className="text-2xl mb-1">🎉</p>
-              <p className="font-bold text-emerald-800">Your KYC is approved!</p>
-              <p className="text-sm text-emerald-600">You can now start collecting international payments.</p>
+            <div className="rounded-2xl p-6 text-center" style={{ background: '#001A0D', border: '1px solid #00C87533' }}>
+              <p className="text-3xl mb-2">🎉</p>
+              <p className="font-display font-bold text-lg mb-1" style={{ color: '#00C875' }}>KYC Approved!</p>
+              <p className="text-sm" style={{ color: '#00C87599' }}>You can now start collecting international payments.</p>
             </div>
           )}
-
           {sub.state === 'rejected' && (
-            <div className="rounded-xl bg-red-50 border border-red-200 p-4">
-              <p className="font-bold text-red-700 mb-1">KYC Rejected</p>
-              <p className="text-sm text-red-600">{sub.reviewer_note || 'Please contact support for details.'}</p>
+            <div className="rounded-2xl p-5" style={{ background: '#1A0A0A', border: '1px solid #FF444433' }}>
+              <p className="font-display font-bold mb-1" style={{ color: '#FF6666' }}>KYC Rejected</p>
+              <p className="text-sm" style={{ color: '#FF666699' }}>{sub.reviewer_note || 'Please contact support for details.'}</p>
             </div>
           )}
-
-          <div className="flex justify-between">
-            <Button variant="secondary" onClick={() => setStep(2)}>← Back</Button>
+          <div className="flex justify-between pt-2">
+            <Button variant="secondary" onClick={() => goToStep(2)}>← Back</Button>
             {['draft', 'more_info_requested'].includes(sub.state) && (
-              <Button onClick={handleSubmit} loading={submitting}>
-                Submit for Review
-              </Button>
+              <Button onClick={handleSubmit} loading={submitting} size="lg">Submit for Review →</Button>
             )}
           </div>
         </div>
@@ -262,17 +320,18 @@ export default function KYCForm({ submission: initialSub, onSaved }) {
   );
 }
 
-// Autosave field component
 function FieldInput({ label, defaultValue, onBlur, saving, disabled, type = 'text', placeholder }) {
   const [val, setVal] = useState(defaultValue || '');
   useEffect(() => setVal(defaultValue || ''), [defaultValue]);
   return (
-    <div className="space-y-1">
-      <label className="block text-sm font-medium text-zinc-700">{label}</label>
+    <div className="space-y-1.5">
+      <label className="block text-xs font-medium uppercase tracking-widest" style={{ color: '#888880' }}>{label}</label>
       <input type={type} value={val} disabled={disabled} placeholder={placeholder}
         onChange={e => setVal(e.target.value)}
-        onBlur={() => { if (val !== (defaultValue || '')) onBlur(val); }}
-        className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-400 disabled:bg-zinc-50 disabled:text-zinc-500" />
+        onBlur={e => { e.target.style.borderColor = '#2A2A2A'; if (val !== (defaultValue || '')) onBlur(val); }}
+        onFocus={e => { if (!disabled) e.target.style.borderColor = '#FF5C00'; }}
+        style={{ background: disabled ? '#0D0D0D' : '#111111', border: '1px solid #2A2A2A', color: disabled ? '#444440' : '#F5F5F0', width: '100%', borderRadius: 12, padding: '12px 16px', fontSize: 14, outline: 'none', transition: 'border-color 0.15s', fontFamily: 'DM Sans, sans-serif' }}
+      />
     </div>
   );
 }

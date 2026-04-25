@@ -1,10 +1,91 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --brand: #FF5C00;
+    --brand-dim: #FF5C0022;
+    --surface: #0F0F0F;
+    --surface-2: #181818;
+    --surface-3: #222222;
+    --border: #2A2A2A;
+    --border-lit: #3A3A3A;
+    --text-primary: #F5F5F0;
+    --text-secondary: #888880;
+    --text-muted: #444440;
+    --green: #00C875;
+    --red: #FF4444;
+    --amber: #FFAA00;
+    --blue: #4488FF;
+    --purple: #AA88FF;
+  }
+
+  * { box-sizing: border-box; }
+
   body {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'DM Sans', sans-serif;
+    background: var(--surface);
+    color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5 {
+    font-family: 'Syne', sans-serif;
+  }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-lit); border-radius: 2px; }
+
+  ::selection { background: var(--brand); color: white; }
+}
+
+@layer utilities {
+  .font-display { font-family: 'Syne', sans-serif; }
+  .text-brand { color: var(--brand); }
+  .bg-brand { background: var(--brand); }
+  .border-brand { border-color: var(--brand); }
+
+  .surface { background: var(--surface); }
+  .surface-2 { background: var(--surface-2); }
+  .surface-3 { background: var(--surface-3); }
+
+  .glow {
+    box-shadow: 0 0 0 1px var(--brand), 0 0 20px var(--brand-dim);
+  }
+
+  .glow-sm {
+    box-shadow: 0 0 0 1px rgba(255,92,0,0.3);
+  }
+
+  .fade-in {
+    animation: fadeIn 0.3s ease forwards;
+  }
+
+  .slide-up {
+    animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes pulse-brand {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .animate-pulse-brand {
+    animation: pulse-brand 2s ease-in-out infinite;
   }
 }
