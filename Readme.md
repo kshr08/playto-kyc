@@ -8,7 +8,7 @@ A full-stack KYC (Know Your Customer) verification system for Indian creators an
 
 > Deploy URL:
 Vercel: https://playto-kyc-theta.vercel.app/
-Render: https://playto-kyc-backend.onrender.com
+Render:https://playto-kyc-backend-cy53.onrender.com
 
 **Test credentials (pre-seeded):**
 
